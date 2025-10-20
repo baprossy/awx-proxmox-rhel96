@@ -60,11 +60,11 @@
     - name: Afficher les informations de la VM
       debug:
         msg: 
-          - "✅ VM créée avec succès !"
-          - "📌 Nom: {{ vm_name }}"
-          - "🆔 VMID: {{ vm_result.vmid | default('N/A') }}"
-          - "🖥️  Nœud: {{ proxmox_node }}"
-          - "💿 ISO: {{ iso_storage }}:iso/{{ iso_file }}"
+          - "VM créée avec succès"
+          - "Nom: {{ vm_name }}"
+          - "VMID: {{ vm_result.vmid | default('N/A') }}"
+          - "Noeud: {{ proxmox_node }}"
+          - "ISO: {{ iso_storage }}:iso/{{ iso_file }}"
 
     - name: Démarrer la VM (optionnel)
       community.general.proxmox_kvm:
@@ -76,7 +76,8 @@
         state: started
         validate_certs: no
       when: auto_start | default(false) | bool
+      register: vm_start
 
     - name: Message final
       debug:
-        msg: "{{ '🚀 VM démarrée' if (auto_start | default(false) | bool) else '⏸️  VM créée (non démarrée)' }}"
+        msg: "{{ 'VM démarrée automatiquement' if (auto_start | default(false) | bool) else 'VM créée mais non démarrée' }}"
