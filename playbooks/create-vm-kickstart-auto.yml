@@ -29,16 +29,38 @@
         dest: /var/www/kickstart/ks.cfg
         mode: '0644'
 
-    - name: Démarrer serveur web
-      shell: |
-        cd /var/www/kickstart
-        pkill -f "python3 -m http.server {{ kickstart_port }}" || true
-        nohup python3 -m http.server {{ kickstart_port }} > /tmp/ks-web.log 2>&1 &
-        sleep 2
+    - name: Arrêter ancien serveur web si existe
+      shell: pkill -f "python3 -m http.server {{ kickstart_port }}"
+      ignore_errors: yes
+
+    - name: Attendre arrêt serveur web
+      pause:
+        seconds: 2
+
+    - name: Démarrer serveur web kickstart
+      shell: cd /var/www/kickstart && nohup python3 -m http.server {{ kickstart_port }} >/dev/null 2>&1 &
+      async: 5
+      poll: 0
+
+    - name: Attendre démarrage serveur web
+      wait_for:
+        port: "{{ kickstart_port }}"
+        delay: 3
+        timeout: 15
+
+    - name: Tester URL kickstart
+      uri:
+        url: "http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg"
+        return_content: no
+        status_code: 200
 
     - name: Arrêter VM si existe
       command: qm stop {{ vm_id }}
       failed_when: false
+
+    - name: Attendre arrêt
+      pause:
+        seconds: 3
 
     - name: Supprimer VM si existe
       command: qm destroy {{ vm_id }} --purge
@@ -65,11 +87,27 @@
         --serial0 socket
         --agent enabled=1
         --onboot 1
-        --args "-append 'inst.ks=http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg inst.text console=ttyS0'"
+        --args "-append 'inst.ks=http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg inst.text console=ttyS0,115200'"
 
-    - name: Démarrer VM
+    - name: Démarrer installation automatique
       command: qm start {{ vm_id }}
 
-    - name: Message
+    - name: Message final
       debug:
-        msg: "Installation automatique lancée ! Durée: 10-15 min. Credentials: root/RedHat123! et admin/Admin123!"
+        msg: |
+          ==========================================
+          Installation automatique LANCÉE !
+          
+          VM: {{ vm_name }} (ID {{ vm_id }})
+          RAM: {{ vm_memory }}MB / Disque: {{ vm_disk_size }}GB
+          
+          Kickstart URL: http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg
+          
+          Durée estimée: 10-15 minutes
+          
+          Credentials après installation:
+          - root / RedHat123!
+          - admin / Admin123!
+          
+          Console: Proxmox → VM {{ vm_id }} → Console
+          ==========================================
