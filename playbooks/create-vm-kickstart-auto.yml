@@ -87,27 +87,35 @@
         --serial0 socket
         --agent enabled=1
         --onboot 1
-        --args "-append 'inst.ks=http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg inst.text console=ttyS0,115200'"
 
-    - name: Démarrer installation automatique
+    - name: Démarrer la VM
       command: qm start {{ vm_id }}
 
-    - name: Message final
+    - name: Attendre démarrage VM
+      pause:
+        seconds: 5
+
+    - name: Instructions boot manuel
       debug:
         msg: |
           ==========================================
-          Installation automatique LANCÉE !
+          VM {{ vm_name }} créée et démarrée !
           
-          VM: {{ vm_name }} (ID {{ vm_id }})
-          RAM: {{ vm_memory }}MB / Disque: {{ vm_disk_size }}GB
+          ⚠️ ACTION MANUELLE REQUISE (1 seule fois) :
           
-          Kickstart URL: http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg
+          1. Allez sur Proxmox Console → VM {{ vm_id }}
+          2. Au menu de boot RHEL, appuyez sur 'e' (éditer)
+          3. Trouvez la ligne 'linuxefi' ou 'linux'
+          4. Ajoutez à la fin de cette ligne :
+             inst.ks=http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg
+          5. Appuyez sur Ctrl+X pour booter
           
-          Durée estimée: 10-15 minutes
+          Ensuite l'installation sera 100% automatique !
+          Durée : 10-15 minutes
           
-          Credentials après installation:
-          - root / RedHat123!
-          - admin / Admin123!
+          Credentials après installation :
+          - root / baraka
+          - baraka / baraka (avec sudo)
           
-          Console: Proxmox → VM {{ vm_id }} → Console
+          URL Kickstart : http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg
           ==========================================
