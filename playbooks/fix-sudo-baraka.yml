@@ -1,0 +1,18 @@
+---
+- name: Donner droits sudo à baraka
+  hosts: "{{ proxmox_host | default('192.168.1.56') }}"
+  gather_facts: no
+  become: yes
+
+  vars:
+    vm_id: "{{ vm_id }}"
+
+  tasks:
+    - name: Ajouter baraka au groupe wheel via qm guest exec
+      shell: |
+        qm guest exec {{ vm_id }} -- /usr/sbin/usermod -aG wheel baraka
+      ignore_errors: yes
+
+    - name: Message
+      debug:
+        msg: "Baraka a maintenant les droits sudo sur VM {{ vm_id }} !"
