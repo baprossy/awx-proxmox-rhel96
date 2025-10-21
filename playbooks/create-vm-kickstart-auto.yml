@@ -1,0 +1,75 @@
+---
+- name: Installation automatique RHEL 9.6 avec Kickstart
+  hosts: "{{ proxmox_host | default('192.168.1.56') }}"
+  gather_facts: yes
+  become: yes
+
+  vars:
+    vm_id: "{{ vm_id }}"
+    vm_name: "{{ vm_name }}"
+    vm_memory: 4096
+    vm_cores: 2
+    vm_disk_size: 80
+    vm_storage: local-lvm
+    iso_storage: local
+    iso_file: rhel-9.6-x86_64-dvd.iso
+    bridge: vmbr0
+    kickstart_port: 8088
+
+  tasks:
+    - name: Créer dossier kickstart
+      file:
+        path: /var/www/kickstart
+        state: directory
+        mode: '0755'
+
+    - name: Copier fichier kickstart
+      copy:
+        src: ../rhel96-kickstart.cfg
+        dest: /var/www/kickstart/ks.cfg
+        mode: '0644'
+
+    - name: Démarrer serveur web
+      shell: |
+        cd /var/www/kickstart
+        pkill -f "python3 -m http.server {{ kickstart_port }}" || true
+        nohup python3 -m http.server {{ kickstart_port }} > /tmp/ks-web.log 2>&1 &
+        sleep 2
+
+    - name: Arrêter VM si existe
+      command: qm stop {{ vm_id }}
+      failed_when: false
+
+    - name: Supprimer VM si existe
+      command: qm destroy {{ vm_id }} --purge
+      failed_when: false
+
+    - name: Créer VM avec kickstart
+      command: >
+        qm create {{ vm_id }}
+        --name {{ vm_name }}
+        --memory {{ vm_memory }}
+        --cores {{ vm_cores }}
+        --cpu host
+        --sockets 1
+        --ostype l26
+        --machine q35
+        --bios ovmf
+        --scsihw virtio-scsi-pci
+        --scsi0 {{ vm_storage }}:{{ vm_disk_size }},format=raw
+        --efidisk0 {{ vm_storage }}:1,format=raw,efitype=4m,pre-enrolled-keys=1
+        --ide2 {{ iso_storage }}:iso/{{ iso_file }},media=cdrom
+        --net0 virtio,bridge={{ bridge }}
+        --boot order=ide2
+        --vga std
+        --serial0 socket
+        --agent enabled=1
+        --onboot 1
+        --args "-append 'inst.ks=http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg inst.text console=ttyS0'"
+
+    - name: Démarrer VM
+      command: qm start {{ vm_id }}
+
+    - name: Message
+      debug:
+        msg: "Installation automatique lancée ! Durée: 10-15 min. Credentials: root/RedHat123! et admin/Admin123!"
