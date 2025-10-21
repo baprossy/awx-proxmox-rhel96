@@ -1,0 +1,110 @@
+---
+- name: Installation automatique RHEL 9.6 avec Kickstart
+  hosts: "{{ proxmox_host | default('192.168.1.56') }}"
+  gather_facts: yes
+  become: yes
+
+  vars:
+    vm_id: "{{ vm_id }}"
+    vm_name: "{{ vm_name }}"
+    vm_memory: "{{ vm_memory | default(4096) }}"
+    vm_cores: "{{ vm_cores | default(2) }}"
+    vm_disk_size: "{{ vm_disk_size | default(50) }}"
+    vm_storage: local-lvm
+    iso_storage: local
+    iso_file: rhel-9.6-x86_64-dvd.iso
+    bridge: vmbr0
+    kickstart_port: 8088
+
+  tasks:
+    - name: Créer dossier kickstart
+      file:
+        path: /var/www/kickstart
+        state: directory
+        mode: '0755'
+
+    - name: Copier fichier kickstart
+      copy:
+        src: ../rhel96-kickstart.cfg
+        dest: /var/www/kickstart/ks.cfg
+        mode: '0644'
+
+    - name: Arrêter ancien serveur web
+      shell: pkill -f "python3 -m http.server {{ kickstart_port }}"
+      ignore_errors: yes
+
+    - name: Attendre arrêt
+      pause:
+        seconds: 2
+
+    - name: Démarrer serveur web kickstart
+      shell: cd /var/www/kickstart && nohup python3 -m http.server {{ kickstart_port }} >/dev/null 2>&1 &
+      async: 5
+      poll: 0
+
+    - name: Attendre serveur web
+      wait_for:
+        port: "{{ kickstart_port }}"
+        delay: 3
+        timeout: 15
+
+    - name: Arrêter VM si existe
+      command: qm stop {{ vm_id }}
+      failed_when: false
+
+    - name: Attendre arrêt
+      pause:
+        seconds: 3
+
+    - name: Supprimer VM si existe
+      command: qm destroy {{ vm_id }} --purge
+      failed_when: false
+
+    - name: Créer VM
+      command: >
+        qm create {{ vm_id }}
+        --name {{ vm_name }}
+        --memory {{ vm_memory }}
+        --cores {{ vm_cores }}
+        --cpu host
+        --sockets 1
+        --ostype l26
+        --machine q35
+        --bios ovmf
+        --scsihw virtio-scsi-pci
+        --scsi0 {{ vm_storage }}:{{ vm_disk_size }},format=raw
+        --efidisk0 {{ vm_storage }}:1,format=raw,efitype=4m,pre-enrolled-keys=1
+        --ide2 {{ iso_storage }}:iso/{{ iso_file }},media=cdrom
+        --net0 virtio,bridge={{ bridge }}
+        --boot order=ide2
+        --vga std
+        --serial0 socket
+        --agent enabled=1
+        --onboot 1
+
+    - name: Démarrer VM
+      command: qm start {{ vm_id }}
+
+    - name: Instructions
+      debug:
+        msg: |
+          ==========================================
+          VM {{ vm_name }} (ID {{ vm_id }}) créée !
+          
+          RAM: {{ vm_memory }}MB | Cores: {{ vm_cores }} | Disque: {{ vm_disk_size }}GB
+          
+          ACTION MANUELLE (1 fois) :
+          1. Console Proxmox → VM {{ vm_id }}
+          2. Au menu GRUB, appuyez sur 'e'
+          3. Ligne 'linuxefi' → Fin → Ajoutez :
+             inst.ks=http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg
+          4. Ctrl+X
+          
+          Installation automatique : 10-15 min
+          
+          Credentials :
+          - root / baraka
+          - baraka / baraka (avec sudo)
+          
+          URL Kickstart : http://{{ ansible_default_ipv4.address }}:{{ kickstart_port }}/ks.cfg
+          ==========================================
