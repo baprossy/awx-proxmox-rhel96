@@ -1,0 +1,58 @@
+---
+- name: Deploy a RHEL VM on Proxmox
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    node: "pve"                    # Nom du nœud Proxmox
+    gateway: "192.168.1.1"         # Ton gateway local
+    template_rhel9: 301            # VMID du template RHEL 9.6
+    template_rhel10: 320           # VMID du template RHEL 10
+
+  tasks:
+    - name: Select template ID based on OS type
+      set_fact:
+        template_id: "{{ template_rhel9 if os_type == 'rhel9' else template_rhel10 }}"
+
+    - name: Get next available VM ID
+      uri:
+        url: "{{ PROXMOX_HOST }}/cluster/nextid"
+        method: GET
+        user: "{{ PROXMOX_USER }}"
+        password: "{{ PROXMOX_PASSWORD }}"
+        force_basic_auth: yes
+        validate_certs: no
+        return_content: yes
+      register: nextid_response
+
+    - set_fact:
+        newid: "{{ nextid_response.content | int }}"
+
+    - name: Clone VM from template
+      community.general.proxmox_kvm:
+        api_user: "{{ PROXMOX_USER }}"
+        api_password: "{{ PROXMOX_PASSWORD }}"
+        api_host: "{{ PROXMOX_HOST }}"
+        node: "{{ node }}"
+        clone: "{{ template_id }}"
+        newid: "{{ newid }}"
+        name: "{{ vm_name }}"
+        full: true
+        timeout: 300
+
+    - name: Configure VM and start
+      community.general.proxmox_kvm:
+        api_user: "{{ PROXMOX_USER }}"
+        api_password: "{{ PROXMOX_PASSWORD }}"
+        api_host: "{{ PROXMOX_HOST }}"
+        node: "{{ node }}"
+        vmid: "{{ newid }}"
+        ipconfig0: "ip={{ ip_address }}/24,gw={{ gateway }}"
+        agent: true
+        state: started
+
+    - name: Display result
+      debug:
+        msg: "✅ VM {{ vm_name }} ({{ os_type }}) created with ID {{ newid }} and IP {{ ip_address }}"
+
